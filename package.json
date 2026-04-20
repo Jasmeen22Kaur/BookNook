@@ -1,0 +1,9 @@
+{
+  "name": "novel-recommendation-app",
+  "version": "1.0.0",
+  "description": "Run frontend and backend simultaneously",
+  "scripts": {
+    "dev": "npx concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "start": "npm run dev"
+  }
+}
