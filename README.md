@@ -1,4 +1,4 @@
-# BookNook - Book Recommendation App
+# BookNook - Book Recommendation Website
 
 A full-stack web application for discovering, managing, and getting personalized book recommendations. Built with React, Node.js, Express, and SQLite for a seamless reading experience.
 
