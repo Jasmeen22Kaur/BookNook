@@ -120,7 +120,7 @@ novel-recommendation-app/
 │   ├── index.html         # HTML template
 │   └── package.json       # Frontend dependencies
 ├── package.json           # Root package.json for concurrent dev
-└── README.md             # Project documentation
+└── README.md             # Documentation
 ```
 
 ## 🎨 Design Features
