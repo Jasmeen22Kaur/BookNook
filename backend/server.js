@@ -49,14 +49,39 @@ app.post('/api/auth/login', (req, res) => {
     const { username, password } = req.body;
     db.get('SELECT * FROM users WHERE username = ?', [username], async (err, user) => {
         if (err) return res.status(500).json({ error: err.message });
-        if (!user) return res.status(400).json({ error: 'Invalid credentials' });
+        if (!user) return res.status(400).json({ error: 'Invalid Username or Password' });
         
         const validPassword = await bcrypt.compare(password, user.password);
-        if (!validPassword) return res.status(400).json({ error: 'Invalid credentials' });
+        if (!validPassword) return res.status(400).json({ error: 'Invalid Username or Password' });
         
-        const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '24h' });
+        const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
         res.json({ token, username: user.username });
     });
+});
+
+
+app.get('/api/cover', async (req, res) => {
+    const { title, author } = req.query;
+
+    try {
+        const response = await axios.get(
+        'https://openlibrary.org/search.json',
+        {
+            params: { title, author }
+        }
+        );
+
+        const docs = response.data.docs;
+
+        const validDoc = docs.find(d => d.cover_i);
+
+        res.json({
+        coverId: validDoc ? validDoc.cover_i : null
+        });
+
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch cover' });
+    }
 });
 
 const formatDbBook = (row) => ({
@@ -65,7 +90,6 @@ const formatDbBook = (row) => ({
     author: row.author,
     genre: row.genre,
     description: row.description,
-    imageUrl: row.imageUrl
 });
 
 // Books: Get all or search
@@ -104,7 +128,6 @@ app.get('/api/favorites', authenticateToken, (req, res) => {
             author: row.author,
             genre: row.genre,
             description: row.description,
-            imageUrl: row.imageUrl
         }));
         
         res.json(favorites);
@@ -113,12 +136,12 @@ app.get('/api/favorites', authenticateToken, (req, res) => {
 
 // Favorites: Add to favorites
 app.post('/api/favorites', authenticateToken, (req, res) => {
-    const { bookId, title, author, genre, description, imageUrl } = req.body;
+    const { bookId, title, author, genre, description } = req.body;
     if (!bookId) return res.status(400).json({ error: 'bookId is required' });
     
     db.run(
-        'INSERT INTO favorites (userId, bookId, title, author, genre, description, imageUrl) VALUES (?, ?, ?, ?, ?, ?, ?)', 
-        [req.user.id, bookId, title, author, genre, description, imageUrl], 
+        'INSERT INTO favorites (userId, bookId, title, author, genre, description) VALUES (?, ?, ?, ?, ?, ?)', 
+        [req.user.id, bookId, title, author, genre, description], 
         function(err) {
             if (err) {
                 if (err.message.includes('UNIQUE constraint failed')) {
@@ -139,34 +162,74 @@ app.delete('/api/favorites/:bookId', authenticateToken, (req, res) => {
     });
 });
 
-// Recommendations
+// recommendation
 app.get('/api/recommendations', authenticateToken, (req, res) => {
-    db.all('SELECT * FROM favorites WHERE userId = ?', [req.user.id], (err, favorites) => {
-        if (err) return res.status(500).json({ error: err.message });
+    db.all(
+        'SELECT * FROM favorites WHERE userId = ?',
+        [req.user.id],
+        (err, favorites) => {
+            if (err) return res.status(500).json({ error: err.message });
 
-        const favoriteBookIds = favorites.map(f => f.bookId);
-        const favoriteGenres = [...new Set(favorites.map(f => f.genre).filter(Boolean))].slice(0, 3);
-        const exclusionClause = favoriteBookIds.length > 0 ? `AND id NOT IN (${favoriteBookIds.map(() => '?').join(',')})` : '';
-        const exclusionParams = favoriteBookIds.length > 0 ? favoriteBookIds : [];
+            if (!favorites || favorites.length === 0) {
+                return res.status(200).json({
+                    message: 'No favorites found. Add some books to get recommendations.',
+                    recommendations: []
+                });
+            }
 
-        if (favoriteGenres.length > 0) {
-            const genreConditions = favoriteGenres.map(() => 'genre LIKE ?').join(' OR ');
-            const genreParams = favoriteGenres.map((genre) => `%${genre}%`);
-            const sql = `SELECT * FROM books WHERE (${genreConditions}) ${exclusionClause} LIMIT 20`;
+            const favoriteBookIds = favorites.map(f => f.bookId);
 
-            db.all(sql, [...genreParams, ...exclusionParams], (recErr, rows) => {
-                if (recErr) return res.status(500).json({ error: recErr.message });
-                res.json(rows.slice(0, 4).map(formatDbBook));
-            });
-        } else {
-            const sql = `SELECT * FROM books ${exclusionClause} LIMIT 20`;
-            db.all(sql, exclusionParams, (recErr, rows) => {
-                if (recErr) return res.status(500).json({ error: recErr.message });
-                res.json(rows.slice(0, 4).map(formatDbBook));
+            const favoriteGenres = [...new Set(
+                favorites.map(f => f.genre).filter(Boolean)
+            )];
+
+            const favoriteAuthors = [...new Set(
+                favorites.map(f => f.author).filter(Boolean)
+            )];
+
+            const exclusionClause =
+                favoriteBookIds.length > 0
+                    ? `AND id NOT IN (${favoriteBookIds.map(() => '?').join(',')})`
+                    : '';
+
+            const exclusionParams =
+                favoriteBookIds.length > 0 ? favoriteBookIds : [];
+
+            const genreCond = favoriteGenres.map(() => 'LOWER(genre) LIKE LOWER(?)').join(' OR ');
+            const authorCond = favoriteAuthors.map(() => 'LOWER(author) LIKE LOWER(?)').join(' OR ');
+
+            const genreParams = favoriteGenres.map(g => `%${g}%`);
+            const authorParams = favoriteAuthors.map(a => `%${a}%`);
+
+            const strictSQL = `
+                SELECT * FROM books
+                WHERE (${genreCond}) AND (${authorCond})
+                ${exclusionClause}
+            `;
+
+            db.all(strictSQL, [...genreParams, ...authorParams, ...exclusionParams], (err1, rows1) => {
+                if (err1) return res.status(500).json({ error: err1.message });
+
+                if (rows1.length > 0) {
+                    return res.json(rows1.map(formatDbBook));
+                }
+
+                const looseSQL = `
+                    SELECT * FROM books
+                    WHERE (${genreCond} OR ${authorCond})
+                    ${exclusionClause}
+                `;
+
+                db.all(looseSQL, [...genreParams, ...authorParams, ...exclusionParams], (err2, rows2) => {
+                    if (err2) return res.status(500).json({ error: err2.message });
+
+                    res.json(rows2.map(formatDbBook));
+                });
             });
         }
-    });
+    );
 });
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

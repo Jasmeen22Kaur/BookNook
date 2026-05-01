@@ -17,7 +17,7 @@ const Navbar = () => {
       <div className="container nav-content">
         <Link to="/" className="nav-brand">
           <BookOpen className="text-accent" />
-          <span>NovelNook</span>
+          <span>BookNook</span>
         </Link>
         
         {user && (

@@ -6,6 +6,7 @@ const Favorites = () => {
   const [favorites, setFavorites] = useState([]);
   const [loading, setLoading] = useState(true);
 
+
   const fetchFavorites = async () => {
     setLoading(true);
     try {

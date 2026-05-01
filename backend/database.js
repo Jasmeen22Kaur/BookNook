@@ -26,7 +26,6 @@ const db = new sqlite3.Database(dbPath, (err) => {
                 author TEXT,
                 genre TEXT,
                 description TEXT,
-                imageUrl TEXT,
                 FOREIGN KEY (userId) REFERENCES users(id),
                 UNIQUE(userId, bookId)
             )`);
@@ -36,8 +35,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
                 title TEXT,
                 author TEXT,
                 genre TEXT,
-                description TEXT,
-                imageUrl TEXT
+                description TEXT
             )`);
 
             db.get('SELECT COUNT(*) AS count FROM books', (countErr, row) => {
